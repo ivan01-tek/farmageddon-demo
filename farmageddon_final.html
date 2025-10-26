@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>FARMAGEDDON 🐔👽 (Mobile Ready)</title>
+<!-- Chicken favicon (SVG data URI) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='100%25' height='100%25' fill='none'/%3E%3Ctext x='50%25' y='50%25' font-size='40' text-anchor='middle' dominant-baseline='central'%3E%F0%9F%90%94%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --accent:#9affdf; --bg1:#120718; --bg2:#000;
+    --ui-bg: rgba(0,0,0,0.6);
+    --hud-font: 14px monospace;
+  }
+  html,body{ height:100%; margin:0; background:linear-gradient(180deg,var(--bg1),var(--bg2)); font-family:monospace; color:#fff; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+  /* layout */
+  #gameWrap{ position:relative; width:100%; height:100vh; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  canvas{ display:block; width:100%; height:100%; max-width:1200px; max-height:900px; background:radial-gradient(circle at bottom, #221b35 0%, #0c0415 100%); touch-action:none; }
+  /* center modal */
+  .modal{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); background:var(--ui-bg); border-radius:12px; padding:18px; width: min(92vw, 760px); box-sizing:border-box;
+    color:var(--accent); text-align:center;
+  }
+  .hidden{ display:none; }
+  input[type="text"]{ width:100%; padding:10px 12px; border-radius:8px; border:0; font-size:16px; box-sizing:border-box; margin-top:10px; }
+  button.btn{
+    background:var(--accent); color:#111; border:0; padding:10px 14px; border-radius:10px; font-size:16px; cursor:pointer; margin-top:12px;
+  }
+  .small{ font-size:13px; color:rgba(255,255,255,0.8); margin-top:8px; }
+  /* hud */
+  #hud{ position:absolute; left:8px; top:8px; background:rgba(0,0,0,0.25); padding:8px 12px; border-radius:10px; font:var(--hud-font); color:var(--accent); }
+  #hud .line{ display:block; }
+  #hud .score{ font-weight:bold; }
+  /* bottom controls (mobile) */
+  #touchControls{
+    position:absolute; left:0; right:0; bottom:18px; display:flex; justify-content:space-between; pointer-events:none; padding:0 12px;
+  }
+  .touch-group{ pointer-events:auto; display:flex; gap:12px; align-items:center; }
+  .touch-btn{
+    width:64px; height:64px; border-radius:12px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; color:var(--accent);
+    font-weight:bold; font-size:20px; user-select:none; -webkit-user-select:none;
+    touch-action:none;
+  }
+  .touch-btn:active{ transform:translateY(2px); }
+  /* skins area */
+  #skinsPanel{ max-height:60vh; overflow:auto; text-align:left; margin-top:12px; }
+  .skinRow{ display:flex; align-items:center; gap:12px; padding:8px; border-radius:8px; background:rgba(0,0,0,0.15); margin-bottom:8px; }
+  .skinPreview{ width:48px; height:32px; border-radius:6px; box-shadow:0 1px 0 rgba(0,0,0,0.6) inset; flex:0 0 auto; }
+  .skinInfo{ flex:1; }
+  .skinBtn{ padding:6px 10px; border-radius:8px; border:0; cursor:pointer; background:var(--accent); color:#111; }
+  .locked{ opacity:0.45; }
+  /* responsive tweaks */
+  @media (max-width:520px){
+    .touch-btn{ width:56px; height:56px; font-size:18px; }
+    #hud{ font-size:12px; padding:6px 10px; }
+  }
+  /* small footer note */
+  #footerNote{ position:absolute; left:12px; bottom:8px; color:rgba(255,255,255,0.6); font-size:12px; }
+</style>
+</head>
+<body>
+<div id="gameWrap">
+  <canvas id="game"></canvas>
+
+  <!-- modal: Start / name & skin selection -->
+  <div id="startModal" class="modal">
+    <h2 style="margin:0 0 6px 0; font-size:22px; color:#fff;">FARMAGEDDON 🐔👽</h2>
+    <div style="color:rgba(255,255,255,0.9); margin-bottom:8px;">The Chicken Uprising — Enter your name and choose a skin</div>
+
+    <label style="display:block; text-align:left; color:rgba(255,255,255,0.7);">Pilot name</label>
+    <input id="nameInput" type="text" maxlength="20" placeholder="Your name (e.g. Nova)" />
+
+    <div id="skinsPanel">
+      <!-- skins will be populated by JS -->
+    </div>
+
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button id="startPlay" class="btn">Start Game</button>
+      <button id="resetData" class="btn" style="background:transparent; border:1px solid var(--accent); color:var(--accent);">Reset Save</button>
+    </div>
+    <div class="small">Skins unlock at score milestones. Your progress is saved locally (on this device).</div>
+  </div>
+
+  <!-- center message (wave / game over) -->
+  <div id="centerMsg" class="modal hidden" style="width: auto;"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <span class="line" id="hudName">Alien</span>
+    <span class="line score" id="hudScore">Score: 0</span>
+    <span class="line" id="hudHP">HP: ♥♥♥</span>
+    <span class="line" id="hudHigh">High: 0</span>
+  </div>
+
+  <!-- bottom touch controls for mobile -->
+  <div id="touchControls" aria-hidden="true">
+    <div class="touch-group" style="margin-left:6px;">
+      <div id="leftBtn" class="touch-btn">◀</div>
+      <div id="rightBtn" class="touch-btn">▶</div>
+    </div>
+    <div class="touch-group" style="margin-right:6px;">
+      <div id="shootBtn" class="touch-btn">●</div>
+    </div>
+  </div>
+
+  <div id="footerNote">Controls: ← → or touch • Space to shoot • R to restart</div>
+</div>
+
+<script>
+(() => {
+  // ---------- canvas and state ----------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let W = window.innerWidth, H = window.innerHeight;
+  function resizeCanvas(){
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.min(1400, Math.max(600, W)); // cap widths for performance
+    canvas.height = Math.min(1000, Math.max(400, H));
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // UI elements
+  const startModal = document.getElementById('startModal');
+  const nameInput = document.getElementById('nameInput');
+  const skinsPanel = document.getElementById('skinsPanel');
+  const startPlay = document.getElementById('startPlay');
+  const resetData = document.getElementById('resetData');
+  const centerMsg = document.getElementById('centerMsg');
+  const hudName = document.getElementById('hudName');
+  const hudScore = document.getElementById('hudScore');
+  const hudHP = document.getElementById('hudHP');
+  const hudHigh = document.getElementById('hudHigh');
+
+  // touch controls
+  const leftBtn = document.getElementById('leftBtn');
+  const rightBtn = document.getElementById('rightBtn');
+  const shootBtn = document.getElementById('shootBtn');
+
+  // storage keys
+  const KEY_HS = 'farmageddon_highscore_v3';
+  const KEY_UNLOCK = 'farmageddon_unlocked_v3';
+  const KEY_NAME = 'farmageddon_name_v3';
+  const KEY_SELECTED = 'farmageddon_selectedskin_v3';
+
+  // game state
+  let player, bullets = [], enemies = [], enemyBullets = [], particles = [];
+  let score = 0, highscore = 0, running = false, wave = 1;
+  let shootCooldown = 0;
+  let keys = {}; // keyboard state
+  let audioCtx, bgOsc;
+
+  // skins definitions (player color + chicken palette)
+  const SKINS = [
+    { id:'classic', title:'Classic teal', cost:0, playerColor:'#a7fff0', chickenPalette:['#ffce66','#ffd9a6','#fff1b6'] },
+    { id:'neon', title:'Neon magenta', cost:500, playerColor:'#ff66c4', chickenPalette:['#ff9f66','#ffbfa6','#fff5b6'] },
+    { id:'cyber', title:'Cyber blue', cost:1500, playerColor:'#66e0ff', chickenPalette:['#66d6ff','#a6f0ff','#dffaff'] },
+    { id:'void', title:'Void purple', cost:3000, playerColor:'#c39aff', chickenPalette:['#e6c98a','#f1e2c0','#fff7d6'] },
+    { id:'emerald', title:'Emerald', cost:6000, playerColor:'#7fffd4', chickenPalette:['#ffdca6','#ffeecc','#fff7e0'] },
+  ];
+
+  // load saved data
+  let unlocked = new Set();
+  try{ highscore = parseInt(localStorage.getItem(KEY_HS)) || 0; }catch(e){ highscore = 0; }
+  try{
+    const uJSON = localStorage.getItem(KEY_UNLOCK);
+    if(uJSON) JSON.parse(uJSON).forEach(id => unlocked.add(id));
+  }catch(e){ unlocked = new Set(); }
+  try{ const savedName = localStorage.getItem(KEY_NAME); if(savedName) nameInput.value = savedName; }catch(e){}
+  try{ var selectedSkinId = localStorage.getItem(KEY_SELECTED) || 'classic'; }catch(e){ selectedSkinId = 'classic'; }
+
+  // ensure classic skin is unlocked
+  unlocked.add('classic');
+
+  // populate skins panel
+  function renderSkinsPanel(){
+    skinsPanel.innerHTML = '';
+    SKINS.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'skinRow' + (unlocked.has(s.id) ? '' : ' locked');
+      const sw = document.createElement('div');
+      sw.className = 'skinPreview';
+      sw.style.background = s.playerColor;
+      sw.style.border = '2px solid rgba(0,0,0,0.25)';
+      // chicken mini sample
+      const chickens = document.createElement('div');
+      chickens.style.display='flex'; chickens.style.gap='4px'; chickens.style.marginTop='6px';
+      s.chickenPalette.slice(0,3).forEach(c => { const cdiv = document.createElement('div'); cdiv.style.width='10px'; cdiv.style.height='8px'; cdiv.style.background=c; cdiv.style.borderRadius='2px'; chickens.appendChild(cdiv); });
+      sw.appendChild(chickens);
+
+      const info = document.createElement('div');
+      info.className = 'skinInfo';
+      info.innerHTML = `<strong style="color:#fff">${s.title}</strong><div class="small">Unlock at ${s.cost} pts</div>`;
+
+      const btn = document.createElement('button');
+      btn.className = 'skinBtn';
+      btn.textContent = unlocked.has(s.id) ? (selectedSkinId === s.id ? 'Selected' : 'Select') : (s.cost === 0 ? 'Free' : 'Locked');
+      btn.disabled = !unlocked.has(s.id);
+      btn.addEventListener('click', () => {
+        if(!unlocked.has(s.id)) return;
+        selectedSkinId = s.id;
+        try{ localStorage.setItem(KEY_SELECTED, selectedSkinId); }catch(e){}
+        renderSkinsPanel();
+      });
+
+      row.appendChild(sw);
+      row.appendChild(info);
+      row.appendChild(btn);
+      skinsPanel.appendChild(row);
+    });
+  }
+  renderSkinsPanel();
+
+  // HUD update
+  function updateHUD(){ hudName.textContent = (nameInput.value || 'Alien'); hudScore.textContent = 'Score: ' + score; hudHP.textContent = 'HP: ' + '♥'.repeat(player?player.hp:3); hudHigh.textContent = 'High: ' + highscore; }
+
+  // audio helpers
+  function initAudio(){
+    if(audioCtx) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e){ audioCtx = null; }
+  }
+  function playSound(type){
+    if(!audioCtx) return;
+    try{
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      if(type === 'shoot'){ o.type='square'; o.frequency.setValueAtTime(700 + Math.random()*120, now); g.gain.setValueAtTime(0.08, now); }
+      else if(type === 'expl'){ o.type='sawtooth'; o.frequency.setValueAtTime(160 + Math.random()*80, now); g.gain.setValueAtTime(0.22, now); }
+      else if(type === 'hit'){ o.type='triangle'; o.frequency.setValueAtTime(220 + Math.random()*120, now); g.gain.setValueAtTime(0.14, now); }
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      o.start(now); o.stop(now + 0.26);
+    }catch(e){}
+  }
+  function startMusic(){
+    if(!audioCtx) return;
+    if(bgOsc) return;
+    try{
+      bgOsc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      bgOsc.type='sine'; bgOsc.frequency.setValueAtTime(170, audioCtx.currentTime);
+      g.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      bgOsc.connect(g).connect(audioCtx.destination);
+      bgOsc.start();
+    }catch(e){}
+  }
+  function stopMusic(){ if(bgOsc){ try{ bgOsc.stop(); }catch(e){} bgOsc = null; } }
+
+  // physics & drawing helpers
+  function setSelectedSkin(skinId){
+    const s = SKINS.find(x => x.id === skinId) || SKINS[0];
+    return s;
+  }
+
+  function spawnEnemies(){
+    enemies = [];
+    const cols = Math.min(10, Math.max(6, Math.floor(canvas.width / 90)));
+    const spacing = Math.min(110, Math.floor(canvas.width / cols));
+    const startX = Math.max(80, (canvas.width - spacing*(cols-1))/2);
+    for(let i=0;i<cols;i++){
+      enemies.push({
+        x: startX + i*spacing,
+        y: 90,
+        w: 44, h: 34,
+        type: ['rooster','hen','chick'][i%3],
+        alive: true,
+        dir: Math.random()>0.5?1:-1,
+        shootCooldown: Math.random()*150 + 120
+      });
+    }
+  }
+
+  function drawBackground(){
+    ctx.fillStyle = '#0b0310';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // simple parallax stars
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for(let i=0;i<80;i++){
+      const x = (i*73 + wave*6) % canvas.width;
+      const y = (i*41 + wave*4) % canvas.height;
+      ctx.fillRect(x, y, 2, 2);
+    }
+  }
+
+  function drawPlayer(pl, skin){
+    ctx.save();
+    ctx.translate(pl.x + pl.w/2, pl.y + pl.h/2);
+    ctx.fillStyle = skin.playerColor;
+    ctx.beginPath(); ctx.ellipse(0,0,pl.w/2,pl.h/2,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#1c1622';
+    ctx.beginPath(); ctx.ellipse(0,-6,pl.w/3,pl.h/2.6,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawChicken(e, skin){
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    // chicken color pick based on type index
+    const idx = e.type === 'rooster' ? 0 : (e.type === 'hen' ? 1 : 2);
+    const palette = skin.chickenPalette;
+    const col = palette[idx % palette.length] || '#ffce66';
+    ctx.fillStyle = col; ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h);
+    ctx.fillStyle = '#111'; ctx.fillRect(-8, -6, 6, 6);
+    ctx.fillStyle = '#ff8a00'; ctx.beginPath(); ctx.moveTo(10,0); ctx.lineTo(18,4); ctx.lineTo(10,8); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  function createExplosion(x,y,color='#ffce66'){
+    playSound('expl');
+    for(let i=0;i<26;i++){
+      particles.push({
+        x,y,
+        dx:(Math.random()-0.5)*6,
+        dy:(Math.random()-0.5)*6,
+        life:24 + Math.random()*28,
+        color
+      });
+    }
+  }
+
+  function updateParticles(){
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.x += p.dx; p.y += p.dy; p.dy += 0.12; p.life--;
+      if(p.life <= 0) particles.splice(i,1);
+      else { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 2, 2); }
+    }
+  }
+
+  // game loop
+  let selectedSkin = setSelectedSkin(selectedSkinId || 'classic');
+  function startGame(){
+    // store name
+    const nameVal = (nameInput.value || 'Alien').trim();
+    nameInput.value = nameVal;
+    try{ localStorage.setItem(KEY_NAME, nameVal); }catch(e){}
+    hudName.textContent = nameVal;
+
+    // init audio & music (user gesture)
+    initAudio();
+    if(audioCtx){ audioCtx.resume().catch(()=>{}); startMusic(); }
+
+    startModal.classList.add('hidden');
+    centerMsg.classList.add('hidden');
+    running = true;
+    score = 0; wave = 1;
+    player = { x: canvas.width/2 - 28, y: canvas.height - 110, w:56, h:34, speed:6, hp:3 };
+    bullets = []; enemyBullets = []; enemies = []; particles = [];
+    selectedSkin = setSelectedSkin(localStorage.getItem(KEY_SELECTED) || selectedSkinId || 'classic');
+    spawnEnemies();
+    updateHUD();
+    requestAnimationFrame(loop);
+  }
+
+  function endGame(){
+    running = false;
+    stopMusic();
+    playSound('expl');
+    // save highscore & unlocked
+    if(score > highscore){
+      highscore = score;
+      try{ localStorage.setItem(KEY_HS, String(highscore)); }catch(e){}
+    }
+    // persist unlocked skins
+    try{ localStorage.setItem(KEY_UNLOCK, JSON.stringify(Array.from(unlocked))); }catch(e){}
+    // show game over modal
+    centerMsg.classList.remove('hidden');
+    centerMsg.style.width = 'min(90vw, 560px)';
+    centerMsg.innerHTML = `<div style="font-size:20px; color:#fff">💀 The Chickens reclaimed the coop</div>
+      <div style="margin-top:8px">Score: <strong style="color:var(--accent)">${score}</strong></div>
+      <div style="margin-top:6px">High Score: <strong style="color:var(--accent)">${highscore}</strong></div>
+      <div style="margin-top:12px; display:flex; gap:10px; justify-content:center;">
+        <button class="btn" id="playAgain">Play Again</button>
+        <button class="btn" id="backMenu" style="background:transparent; border:1px solid var(--accent); color:var(--accent)">Menu</button>
+      </div>
+      <div class="small" style="margin-top:8px; color:rgba(255,255,255,0.85)">Press R to restart quickly</div>`;
+    document.getElementById('playAgain').addEventListener('click', () => { centerMsg.classList.add('hidden'); startGame(); });
+    document.getElementById('backMenu').addEventListener('click', () => { centerMsg.classList.add('hidden'); startModal.classList.remove('hidden'); renderSkinsPanel(); });
+  }
+
+  function loop(){
+    if(!running) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // background + stars
+    drawBackground();
+
+    // movement (keyboard/touch)
+    if(keys['ArrowLeft'] || keys['KeyA']) player.x -= player.speed;
+    if(keys['ArrowRight'] || keys['KeyD']) player.x += player.speed;
+    player.x = Math.max(8, Math.min(canvas.width - player.w - 8, player.x));
+
+    // shooting
+    if((keys['Space'] || keys['TouchShoot']) && shootCooldown <= 0){
+      bullets.push({ x: player.x + player.w/2, y: player.y - 8, w:6, h:12 });
+      playSound('shoot');
+      shootCooldown = 12; // frames
+    }
+    if(shootCooldown > 0) shootCooldown--;
+
+    // update bullets
+    for(let i=bullets.length-1;i>=0;i--){
+      const b = bullets[i]; b.y -= 12; if(b.y < -40) bullets.splice(i,1); else { ctx.fillStyle = selectedSkin.playerColor; ctx.fillRect(b.x-3,b.y, b.w, b.h); }
+    }
+
+    // enemies move & shoot
+    enemies.forEach(e => {
+      if(!e.alive) return;
+      e.x += e.dir * (1.4 + wave*0.05);
+      if(e.x < 50 || e.x > canvas.width - 50) e.dir *= -1;
+      e.shootCooldown--;
+      if(e.shootCooldown <= 0){
+        const dx = (player.x + player.w/2) - e.x;
+        const dy = (player.y + player.h/2) - e.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const speed = 3 + Math.random()*1.6;
+        enemyBullets.push({ x: e.x, y: e.y + 12, dx: (dx/dist)*speed, dy: (dy/dist)*speed });
+        e.shootCooldown = Math.random()*140 + 80 - Math.min(50, wave*4);
+      }
+    });
+
+    enemies.forEach(e => { if(e.alive) drawChicken(e, selectedSkin); });
+
+    // update enemy bullets
+    for(let i=enemyBullets.length-1;i>=0;i--){
+      const eb = enemyBullets[i]; eb.x += eb.dx; eb.y += eb.dy;
+      ctx.fillStyle = '#f4e96f';
+      ctx.beginPath(); ctx.ellipse(eb.x, eb.y, 6, 8, 0, 0, Math.PI*2); ctx.fill();
+
+      // collision with player
+      if(eb.x > player.x && eb.x < player.x + player.w && eb.y > player.y && eb.y < player.y + player.h){
+        enemyBullets.splice(i,1);
+        player.hp--;
+        playSound('hit');
+        createExplosion(player.x + player.w/2, player.y + player.h/2, selectedSkin.playerColor);
+        if(player.hp <= 0) return endGame();
+      } else if(eb.y > canvas.height + 60 || eb.x < -60 || eb.x > canvas.width + 60){
+        enemyBullets.splice(i,1);
+      }
+    }
+
+    // bullet hits enemy
+    for(let i=bullets.length-1;i>=0;i--){
+      const b = bullets[i];
+      for(let j=0;j<enemies.length;j++){
+        const e = enemies[j];
+        if(e.alive && b.x > e.x - e.w/2 && b.x < e.x + e.w/
+2 && b.y > e.y - e.h/2 && b.y < e.y + e.h/2){
+          e.alive = false;
+          bullets.splice(i,1);
+          score += 100;
+          // unlock skins by score milestones
+          SKINS.forEach(s => { if(score >= s.cost && !unlocked.has(s.id) && s.cost > 0){ unlocked.add(s.id); } });
+          createExplosion(e.x, e.y, selectedSkin.playerColor);
+          break;
+        }
+      }
+    }
+
+    // draw player & particles
+    drawPlayer(player, selectedSkin);
+    updateParticles();
+
+    // HUD updates (every frame)
+    updateHUD();
+
+    // wave cleared?
+    if(enemies.every(e => !e.alive)){
+      wave++;
+      centerMsg.classList.remove('hidden');
+      centerMsg.innerHTML = `<div style="font-size:18px;color:#fff">Wave ${wave} incoming!</div>`;
+      setTimeout(()=> centerMsg.classList.add('hidden'), 800);
+      // heal slight
+      player.hp = Math.min(3, player.hp + 1);
+      spawnEnemies();
+    }
+
+    // next frame
+    requestAnimationFrame(loop);
+  }
+
+  // input handling: touch buttons -> map to keys
+  function setupTouch(button, downKey, upKey){
+    let active = false;
+    const set = val => keys[downKey] = val;
+    button.addEventListener('touchstart', (e) => { e.preventDefault(); active = true; set(true); }, {passive:false});
+    button.addEventListener('touchend', (e) => { e.preventDefault(); active = false; set(false); }, {passive:false});
+    button.addEventListener('touchcancel', (e) => { e.preventDefault(); active = false; set(false); }, {passive:false});
+    // mouse support for desktop
+    button.addEventListener('pointerdown', (e) => { e.preventDefault(); set(true); });
+    button.addEventListener('pointerup', (e) => { e.preventDefault(); set(false); });
+    button.addEventListener('pointerleave', (e) => { e.preventDefault(); set(false); });
+  }
+  // left/right/shoot mapped to ArrowLeft/ArrowRight/Space
+  setupTouch(leftBtn, 'ArrowLeft');
+  setupTouch(rightBtn, 'ArrowRight');
+  // shoot special: use a different key flag to avoid messing with keyboard 'Space' behavior
+  shootBtn.addEventListener('touchstart', (e)=>{ e.preventDefault(); keys['TouchShoot'] = true; });
+  shootBtn.addEventListener('touchend', (e)=>{ e.preventDefault(); keys['TouchShoot'] = false; });
+  shootBtn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); keys['TouchShoot'] = true; });
+  shootBtn.addEventListener('pointerup', (e)=>{ e.preventDefault(); keys['TouchShoot'] = false; });
+
+  // keyboard events
+  window.addEventListener('keydown', (e) => {
+    // don't block typing when name input is focused
+    if(document.activeElement === nameInput) return;
+    keys[e.code] = true;
+    if(e.code === 'Space') e.preventDefault(); // avoid scroll
+    // quick restart
+    if(e.code === 'KeyR' && !running){ startGame(); }
+  });
+  window.addEventListener('keyup', (e) => {
+    keys[e.code] = false;
+  });
+
+  // Start button handlers
+  startPlay.addEventListener('click', () => {
+    // ensure a name is set
+    if(!nameInput.value) nameInput.value = 'Alien';
+    selectedSkinId = localStorage.getItem(KEY_SELECTED) || selectedSkinId || 'classic';
+    selectedSkin = setSelectedSkin(selectedSkinId);
+    renderSkinsPanel();
+    startGame();
+  });
+
+  // reset saved data
+  resetData.addEventListener('click', () => {
+    if(!confirm('Reset saved data (high score, unlocked skins, name)?')) return;
+    try{ localStorage.removeItem(KEY_HS); localStorage.removeItem(KEY_UNLOCK); localStorage.removeItem(KEY_NAME); localStorage.removeItem(KEY_SELECTED); }catch(e){}
+    unlocked = new Set(['classic']); highscore = 0; nameInput.value = ''; selectedSkinId = 'classic'; selectedSkin = setSelectedSkin('classic');
+    renderSkinsPanel(); alert('Save reset — refresh the page to ensure full reset.');
+  });
+
+  // initial HUD & skin render
+  // ensure unlocked map includes any skins already reachable
+  SKINS.forEach(s => { if(s.cost === 0) unlocked.add(s.id); if(score >= s.cost) unlocked.add(s.id); });
+  renderSkinsPanel();
+  hudHigh.textContent = 'High: ' + highscore;
+
+  // unlock freebies and previously reachable skins
+  SKINS.forEach(s => { if(s.cost === 0) unlocked.add(s.id); if(score >= s.cost) unlocked.add(s.id); });
+
+  // IMPORTANT: update check and save unlocked periodically (e.g., when score changes).
+  // We'll call checkAndUnlockSkins() in gameplay logic whenever score changes.
+
+  // eslint-disable-next-line no-unused-vars
+  function debugSave(){
+    try{
+      localStorage.setItem(KEY_HS, String(highscore));
+      localStorage.setItem(KEY_UNLOCK, JSON.stringify(Array.from(unlocked)));
+      localStorage.setItem(KEY_SELECTED, selectedSkinId);
+      localStorage.setItem(KEY_NAME, nameInput.value || 'Alien');
+    }catch(e){}
+  }
+
+  // DONE
+})();
+</script>
+</body>
+</html>
